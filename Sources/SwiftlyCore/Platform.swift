@@ -56,6 +56,9 @@ public struct PlatformDefinition: Codable, Equatable, Sendable {
     public static let debian13 = PlatformDefinition(
         name: "debian13", nameFull: "debian13", namePretty: "Debian GNU/Linux 13"
     )
+    public static let windows10 = PlatformDefinition(
+        name: "windows10", nameFull: "windows10", namePretty: "Windows 10"
+    )
 }
 
 public struct RunProgramError: Swift.Error {
@@ -293,6 +296,43 @@ extension Platform {
         }
         // With a system prefix?
         return ["/usr", "/opt", "/bin"].contains { path.starts(with: $0) }
+    }
+
+#elseif os(Windows)
+
+    // Install ourselves in the final location
+    public func installSwiftlyBin(_ ctx: SwiftlyCoreContext) async throws {
+        // Proceed only if we're not running in the context of a mocked home directory.
+        guard ctx.mockedHomeDir == nil, let cmdAbsolute = Bundle.main.executablePath.map({ FilePath($0) }) else {
+            return
+        }
+
+        // We're already running from where we would be installing ourselves.
+        guard
+            case let swiftlyHomeBin = self.swiftlyBinDir(ctx) / "swiftly.exe",
+            cmdAbsolute != swiftlyHomeBin
+        else {
+            return
+        }
+
+        await ctx.message("Installing swiftly in \(swiftlyHomeBin)...")
+
+        if try await fs.exists(atPath: swiftlyHomeBin) {
+            try await fs.remove(atPath: swiftlyHomeBin)
+        }
+
+        try await fs.copy(atPath: cmdAbsolute, toPath: swiftlyHomeBin)
+    }
+
+    // Find the location where swiftly should be executed.
+    public func findSwiftlyBin(_ ctx: SwiftlyCoreContext) async throws -> FilePath? {
+        let swiftlyHomeBin = self.swiftlyBinDir(ctx) / "swiftly.exe"
+        return try await fs.exists(atPath: swiftlyHomeBin) ? swiftlyHomeBin : nil
+    }
+
+    public func findToolchainBinDir(_ ctx: SwiftlyCoreContext, _ toolchain: ToolchainVersion) async throws -> FilePath
+    {
+        (try await self.findToolchainLocation(ctx, toolchain)) / "usr" / "bin"
     }
 
 #endif

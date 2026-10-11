@@ -1,5 +1,8 @@
 import Foundation
 import SystemPackage
+#if os(Windows)
+import WinSDK
+#endif
 
 typealias fs = FileSystem
 
@@ -90,6 +93,28 @@ public enum FileSystem {
     public static func symlink(atPath: FilePath, linkPath: FilePath) async throws {
         try FileManager.default.createSymbolicLink(atPath: atPath, withDestinationPath: linkPath)
     }
+
+#if os(Windows)
+    public static func hardLink(atPath: FilePath, linkPath: FilePath) async throws {
+        try FileManager.default.linkItem(atPath: linkPath.string, toPath: atPath.string)
+    }
+
+    /// Whether the two paths refer to the same file on disk, such as hard links of each other.
+    public static func isSameFile(_ lhs: FilePath, _ rhs: FilePath) async -> Bool {
+        func fileID(_ path: FilePath) -> (DWORD, DWORD, DWORD)? {
+            let handle = path.string.withCString(encodedAs: UTF16.self) {
+                CreateFileW($0, 0, DWORD(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE), nil, DWORD(OPEN_EXISTING), DWORD(FILE_FLAG_BACKUP_SEMANTICS), nil)
+            }
+            guard let handle, handle != INVALID_HANDLE_VALUE else { return nil }
+            defer { CloseHandle(handle) }
+            var info = BY_HANDLE_FILE_INFORMATION()
+            guard GetFileInformationByHandle(handle, &info) else { return nil }
+            return (info.dwVolumeSerialNumber, info.nFileIndexHigh, info.nFileIndexLow)
+        }
+        guard let l = fileID(lhs), let r = fileID(rhs) else { return false }
+        return l == r
+    }
+#endif
 
     public static func chmod(atPath: FilePath, mode: Int) async throws {
         try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: atPath.string)

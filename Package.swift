@@ -6,6 +6,24 @@ let swiftSettings = [
     SwiftSetting.enableUpcomingFeature("MemberImportVisibility"),
 ]
 
+// AsyncHTTPClient (and its NIO/BoringSSL stack) does not build on Windows, so
+// SwiftlyCore uses a WinHTTP based OpenAPI transport there instead.
+#if os(Windows)
+let httpPackageDependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/compnerd/openapi-winhttp-transport", branch: "main"),
+]
+let httpTargetDependencies: [Target.Dependency] = [
+    .product(name: "OpenAPIWinHTTPTransport", package: "openapi-winhttp-transport"),
+]
+#else
+let httpPackageDependencies: [Package.Dependency] = []
+let httpTargetDependencies: [Target.Dependency] = [
+    .product(name: "AsyncHTTPClient", package: "async-http-client"),
+    .product(name: "NIOFoundationCompat", package: "swift-nio"),
+    .product(name: "OpenAPIAsyncHTTPClient", package: "swift-openapi-async-http-client"),
+]
+#endif
+
 let package = Package(
     name: "swiftly",
     platforms: [
@@ -34,7 +52,7 @@ let package = Package(
         .package(url: "https://github.com/swiftlang/swift-subprocess", exact: "1.0.0", traits: []),
         // This dependency provides the correct version of the formatter so that you can run `swift run swiftformat Package.swift Plugins/ Sources/ Tests/`
         .package(url: "https://github.com/nicklockwood/SwiftFormat", exact: "0.49.18"),
-    ],
+    ] + httpPackageDependencies,
     targets: [
         .executableTarget(
             name: "Swiftly",
@@ -43,6 +61,7 @@ let package = Package(
                 .target(name: "SwiftlyCore"),
                 .target(name: "LinuxPlatform", condition: .when(platforms: [.linux])),
                 .target(name: "MacOSPlatform", condition: .when(platforms: [.macOS])),
+                .target(name: "WindowsPlatform", condition: .when(platforms: [.windows])),
                 .product(name: "SwiftToolsSupport-auto", package: "swift-tools-support-core"),
                 .product(name: "SystemPackage", package: "swift-system"),
             ],
@@ -63,13 +82,10 @@ let package = Package(
             dependencies: [
                 "SwiftlyDownloadAPI",
                 "SwiftlyWebsiteAPI",
-                .product(name: "AsyncHTTPClient", package: "async-http-client"),
-                .product(name: "NIOFoundationCompat", package: "swift-nio"),
                 .product(name: "OpenAPIRuntime", package: "swift-openapi-runtime"),
-                .product(name: "OpenAPIAsyncHTTPClient", package: "swift-openapi-async-http-client"),
                 .product(name: "SystemPackage", package: "swift-system"),
                 .product(name: "Subprocess", package: "swift-subprocess"),
-            ],
+            ] + httpTargetDependencies,
             swiftSettings: swiftSettings,
             plugins: ["GenerateCommandModels"]
         ),
@@ -158,6 +174,14 @@ let package = Package(
         ),
         .target(
             name: "MacOSPlatform",
+            dependencies: [
+                "SwiftlyCore",
+                .product(name: "SystemPackage", package: "swift-system"),
+            ],
+            swiftSettings: swiftSettings
+        ),
+        .target(
+            name: "WindowsPlatform",
             dependencies: [
                 "SwiftlyCore",
                 .product(name: "SystemPackage", package: "swift-system"),
