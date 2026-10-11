@@ -159,17 +159,29 @@ struct Install: SwiftlyCommand {
             let swiftlyBinDirContents =
                 (try? await fs.ls(atPath: swiftlyBinDir)) ?? [String]()
             let toolchainBinDir = try await Swiftly.currentPlatform.findToolchainBinDir(ctx, version)
+#if os(Windows)
+            // Only executables are proxied; the toolchain's bin directory also contains its DLLs.
+            let toolchainBinDirContents = try await fs.ls(atPath: toolchainBinDir).filter { $0.lowercased().hasSuffix(".exe") }
+#else
             let toolchainBinDirContents = try await fs.ls(atPath: toolchainBinDir)
+#endif
 
             var existingProxies: [String] = []
 
             for bin in swiftlyBinDirContents {
+#if os(Windows)
+                // Proxies are hard links to swiftly on Windows.
+                if swiftlyBinDir / bin != proxyTo, await fs.isSameFile(swiftlyBinDir / bin, proxyTo) {
+                    existingProxies.append(bin)
+                }
+#else
                 do {
                     let linkTarget = try await fs.readlink(atPath: swiftlyBinDir / bin)
                     if linkTarget == proxyTo {
                         existingProxies.append(bin)
                     }
                 } catch { continue }
+#endif
             }
 
             let overwrite = Set(toolchainBinDirContents).subtracting(existingProxies).intersection(
@@ -201,7 +213,11 @@ struct Install: SwiftlyCommand {
                     try await fs.remove(atPath: proxy)
                 }
 
+#if os(Windows)
+                try await fs.hardLink(atPath: proxy, linkPath: proxyTo)
+#else
                 try await fs.symlink(atPath: proxy, linkPath: proxyTo)
+#endif
 
                 pathChanged = true
             }
@@ -281,7 +297,10 @@ struct Install: SwiftlyCommand {
             var platformString = config.platform.name
             var platformFullString = config.platform.nameFull
 
-#if !os(macOS) && arch(arm64)
+#if os(Windows) && arch(arm64)
+            platformString += "-arm64"
+            platformFullString += "-arm64"
+#elseif !os(macOS) && arch(arm64)
             platformString += "-aarch64"
             platformFullString += "-aarch64"
 #endif

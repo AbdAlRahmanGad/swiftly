@@ -270,6 +270,11 @@ struct Init: SwiftlyCommand {
             }
         }
 
+#if os(Windows)
+        // There is no profile script to source on Windows, so tell the user how to put the swiftly bin
+        // directory on the PATH of their PowerShell session instead.
+        let sourceLine = "$env:Path = \(Swiftly.currentPlatform.escapePathForShell(Swiftly.currentPlatform.swiftlyBinDir(ctx))) + ';' + $env:Path"
+#else
         let envFile: FilePath
         let sourceLine: String
         if shell.hasSuffix("fish") {
@@ -287,6 +292,7 @@ struct Init: SwiftlyCommand {
             . \(Swiftly.currentPlatform.escapePathForShell(envFile))
             """
         }
+#endif
 
         if overwrite {
             try? await fs.remove(atPath: Swiftly.currentPlatform.swiftlyToolchainsDir(ctx))
@@ -318,6 +324,7 @@ struct Init: SwiftlyCommand {
         // Move our executable over to the correct place
         try await Swiftly.currentPlatform.installSwiftlyBin(ctx)
 
+#if !os(Windows)
         let envFileExists = try await fs.exists(atPath: envFile)
 
         if overwrite || !envFileExists {
@@ -377,6 +384,7 @@ struct Init: SwiftlyCommand {
                 try Data(sourceLine.utf8).append(to: profileHome)
             }
         }
+#endif
 
         var postInstall: String?
         var pathChanged = false

@@ -10,9 +10,18 @@ public enum Proxy {
 
         do {
             let zero = CommandLine.arguments[0]
+#if os(Windows)
+            guard var binName = zero.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init) else {
+                fatalError("Could not determine the binary name for proxying")
+            }
+            if binName.lowercased().hasSuffix(".exe") {
+                binName.removeLast(4)
+            }
+#else
             guard let binName = zero.components(separatedBy: "/").last else {
                 fatalError("Could not determine the binary name for proxying")
             }
+#endif
 
             guard binName != "swiftly" else {
                 // Treat this as a swiftly invocation, but first check that we are installed, bootstrapping
@@ -71,8 +80,15 @@ public enum Proxy {
 
             let env = try await Swiftly.currentPlatform.proxyEnvironment(ctx, env: .inherit, toolchain: toolchain)
 
+#if os(Windows)
+            // Run the toolchain's executable directly so that the PATH lookup can't find this proxy again.
+            let executable = Executable.path(try await Swiftly.currentPlatform.findToolchainBinDir(ctx, toolchain) / "\(binName).exe")
+#else
+            let executable = Executable.name(binName)
+#endif
+
             let cmdConfig = Configuration(
-                executable: .name(binName),
+                executable: executable,
                 arguments: Arguments(Array(CommandLine.arguments[1...])),
                 environment: env.updating(["SWIFTLY_PROXY_IN_PROGRESS": "1"])
             )
@@ -90,9 +106,15 @@ public enum Proxy {
         } catch let terminated as RunProgramError {
             switch terminated.terminationStatus {
             case let .exited(code):
+#if os(Windows)
+                exit(Int32(bitPattern: code))
+#else
                 exit(code)
+#endif
+#if !os(Windows)
             case .signaled:
                 exit(1)
+#endif
             }
         } catch let error as SwiftlyError {
             await ctx.message(error.message)
